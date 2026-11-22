@@ -113,21 +113,39 @@ dd if=/dev/block/by-name/boot$(getprop ro.boot.slot_suffix) of=/sdcard/stock_boo
 
 1. 新建仓库（Public/Private 都是 4 vCPU / 16GB / 14GB 盘，先跑清理步骤能腾到 ~40GB）。
 2. 把本目录**内容**（不含最外层文件夹）推到仓库根目录，确认 `.github/workflows/build-fuxi.yml` 路径正确。
-   `device/`、`work/`、`out/` 都在 `.gitignore` 里，**不用上传**（CI 也不需要 stock boot，见下）。
+   `device/`、`work/`、`out/`、`.workbuddy/` 都在 `.gitignore` 里，**不用上传**（CI 也不需要 stock boot，见下）。
 
-   本目录当前还不是 git 仓库，第一次推送：
+   **最省事：一条命令建仓库 + 推送**（需要 GitHub CLI）
 
    ```bash
-   cd "本目录"
+   winget install --id GitHub.cli -e
+   gh auth login --hostname github.com --git-protocol https --web --skip-ssh-key
+   gh auth refresh -h github.com -s workflow     # 必须！否则推 .github/workflows/ 会被拒
+   gh repo create <仓库名> --public --source . --remote origin --push
+   ```
+
+   `gh auth refresh -s workflow` 这一步不能省：没有 `workflow` scope 的 token 推 workflow 文件时 GitHub 会直接拒绝
+   （`refusing to allow an OAuth App to create or update workflow ... without workflow scope`），
+   仓库会建成功但一个文件都推不上去。
+
+   **或者手动 git**
+
+   ```bash
    git init -b main
    git add -A
    git commit -m "fuxi GKI 5.15.178: Nova builtin + SUSFS + LZ4KD + AK3 + Actions"
-   git remote add origin https://github.com/<你的用户名>/<仓库名>.git
+   git remote add origin https://github.com/<用户名>/<仓库名>.git
    git push -u origin main
    ```
 
-   推上去的应该只有 `README.md` / `FLASH-SEQUENCE.md` / `device.env` / `configs/` / `modules/` / `scripts/` / `.github/`，
-   总量几百 KB。`git status` 如果看到 `device/`、`out/`、`work/` 就去查 `.gitignore`。
+   推上去的应该只有 `README.md` / `FLASH-SEQUENCE.md` / `device.env` / `.gitattributes` / `.gitignore` /
+   `configs/` / `modules/` / `scripts/` / `.github/`，总量几百 KB。`git status` 如果看到 `device/`、`out/`、`work/`
+   就去查 `.gitignore`。
+
+   > ⚠️ **Windows 上务必保持 LF 行尾。** 仓库里的 `.gitattributes`（`* text=auto eol=lf`）会自动兜底，
+   > 但如果日志出现 `set: pipefail: invalid option name`（退出码 2），就是脚本被 CRLF 污染了——CI 执行的是
+   > `set -euo pipefail\r`。修法：`git add --renormalize .` 后重新提交。
+   > 本地 WSL 构建一直没事，是因为 `wsl-build.sh` 走 rsync 时会 `tr -d '\r'`，把问题掩盖了。
 
 3. Actions → **Build fuxi GKI 5.15.178 (Nova builtin + SUSFS + LZ4KD)** → Run workflow：
 
