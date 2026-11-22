@@ -1,0 +1,17 @@
+# GKI_BUILD_CONFIG_FRAGMENT：在 build.config.gki.aarch64 之后 source，
+# 用来关掉官方 GKI 的“纯净度”约束（我们刻意改了 config、加了 KSU/SUSFS/LZ4KD）。
+
+# 不做 defconfig 与 savedefconfig 一致性校验（追加配置后必然不一致）
+POST_DEFCONFIG_CMDS=""
+
+# 不做 KMI/ABI 强制校验与裁剪（这台设备只要 Image 能跑，厂商模块靠 CRC）
+KMI_ENFORCED=0
+TRIM_NONLISTED_KMI=0
+KMI_SYMBOL_LIST_STRICT_MODE=0
+
+# 不生成 GKI 官方 boot.img / 认证工具（我们用自己的 repack 脚本，且不需要 avbtool）
+BUILD_GKI_ARTIFACTS=0
+BUILD_GKI_CERTIFICATION_TOOLS=0
+
+# 不打包 system_dlkm（我们不刷这个分区，模块列表校验也省掉）
+BUILD_SYSTEM_DLKM=0

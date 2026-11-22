@@ -1,0 +1,22 @@
+# 构建产物 / 中间目录（CI 会自己生成）
+work/
+out/
+.tmptest/
+build-run.log
+verify.log
+
+# 本机专属：stock boot.img 备份（193MB，CI 不需要）
+device/
+
+# 工具缓存
+__pycache__/
+*.pyc
+
+# WorkBuddy 会话记忆与项目数据，不上传
+.workbuddy/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

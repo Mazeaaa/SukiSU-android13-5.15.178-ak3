@@ -1,0 +1,6 @@
+id=fuxi_zram_lz4kd
+name=fuxi ZRAM LZ4KD 切换
+version=v1.0
+versionCode=1
+author=fuxi-kernel-build
+description=开机把 zram0 压缩算法切到 lz4kd（需内核内置 CONFIG_LZ4KD=y）。失败自动回退，不改分区。

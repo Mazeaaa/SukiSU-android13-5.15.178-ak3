@@ -1,0 +1,174 @@
+name: Build fuxi GKI 5.15.178 (Nova builtin + SUSFS + LZ4KD)
+
+# 用法：推到 GitHub 仓库 → Actions → 本工作流 → Run workflow
+# 产物：boot-fuxi-*.img / fuxi-ak3-*.zip / fuxi-zram-lz4kd-*.zip / Image / BUILD_INFO.txt / SHA256SUMS
+#
+# 说明：
+# - 只有手动触发（workflow_dispatch），不随 push 自动跑，避免白烧额度。
+# - 不需要 device/ 目录（本地那个 stock boot 是 gitignore 的）。已实测：
+#   没有 stock 时走 scripts/pack_bootimg.py 从零生成 v4 头，产物与继承式重打包
+#   **逐字节相同**（md5 一致），所以 CI 产出的 boot.img 可以直接刷。
+# - 单次约 50–80 分钟（repo sync 10–15 分钟 + Thin-LTO 编译 30–40 分钟 + 打包上传）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      with_susfs:
+        description: "1 = Nova builtin + susfs4ksu 内置；0 = main 分支（kprobe，无 SUSFS）"
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "0"]
+      with_lz4kd:
+        description: "1 = 内置 LZ4KD 压缩算法（ZRAM 增强）"
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "0"]
+      inject_kpm:
+        description: "1 = 构建期用 KernelPatch 注入 kpimg（此路径尚未在真机验证过）"
+        required: true
+        default: "0"
+        type: choice
+        options: ["0", "1"]
+      pack_ak3:
+        description: "1 = 额外产出 AnyKernel3 zip（TWRP / Kernel Flasher 刷）"
+        required: true
+        default: "1"
+        type: choice
+        options: ["1", "0"]
+      ksu_version:
+        description: "KSU 版本号，必须 = 你要装的管理器 versionCode（当前 manager-ci = 35079）"
+        required: true
+        default: "35079"
+      ksu_pkg:
+        description: "管理器包名（Nova = com.sukisu.nova）"
+        required: true
+        default: "com.sukisu.nova"
+      kernel_commit:
+        description: "固定 ACK commit（stock uname -r 里的 g<hash>），留空用分支 tip"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuxi-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 打印参数与 runner 资源
+        run: |
+          echo "with_susfs=${{ inputs.with_susfs }} with_lz4kd=${{ inputs.with_lz4kd }} inject_kpm=${{ inputs.inject_kpm }} pack_ak3=${{ inputs.pack_ak3 }}"
+          echo "ksu=${{ inputs.ksu_pkg }}/${{ inputs.ksu_version }} kernel_commit=${inputs.kernel_commit:-<tip>}"
+          nproc; free -h; df -h /
+
+      - name: 释放磁盘（ACK 源码 + out 约需 35GB）
+        run: |
+          set -x
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache /usr/local/share/boost /opt/az \
+                      /usr/local/.ghcup /usr/lib/jvm /usr/local/share/powershell 2>/dev/null || true
+          sudo apt-get clean
+          df -h /
+
+      - name: 增加 swap（Thin-LTO 链接峰值约 6–8GB RSS）
+        run: |
+          set -x
+          sudo fallocate -l 8G /fuxi-swapfile || sudo dd if=/dev/zero of=/fuxi-swapfile bs=1M count=8192
+          sudo chmod 600 /fuxi-swapfile
+          sudo mkswap /fuxi-swapfile
+          sudo swapon /fuxi-swapfile || true
+          free -h
+
+      - name: 安装依赖（含 repo 启动器）
+        run: |
+          bash scripts/install-deps.sh
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+
+      - name: 构建内核
+        env:
+          KSU_VERSION: ${{ inputs.ksu_version }}
+          KSU_PKG: ${{ inputs.ksu_pkg }}
+          WITH_SUSFS: ${{ inputs.with_susfs }}
+          WITH_LZ4KD: ${{ inputs.with_lz4kd }}
+          INJECT_KPM: ${{ inputs.inject_kpm }}
+          PACK_AK3: ${{ inputs.pack_ak3 }}
+          KERNEL_COMMIT: ${{ inputs.kernel_commit }}
+          SKIP_SYNC: "0"
+        run: |
+          set -o pipefail
+          echo "[$(date +%T)] start"
+          # 3.5 小时硬上限；正常 50–80 分钟
+          timeout --signal=INT 12600 bash scripts/build.sh 2>&1 | tee build-run.log
+          rc=${PIPESTATUS[0]}
+          echo "[$(date +%T)] end rc=$rc"
+          exit $rc
+
+      - name: 产物自检
+        if: always()
+        run: |
+          set -o pipefail
+          if [ -f out/Image ]; then
+            bash scripts/verify-artifacts.sh out 2>&1 | tee verify.log
+          else
+            echo "没有 out/Image，跳过自检"
+          fi
+
+      - name: 产物一览
+        if: always()
+        run: |
+          echo "===== out ====="; ls -lh out || true
+          echo "===== BUILD_INFO ====="; cat out/BUILD_INFO.txt || true
+          echo "===== SHA256SUMS ====="; cat out/SHA256SUMS || true
+
+      - name: 上传产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuxi-515178-susfs${{ inputs.with_susfs }}-lz4kd${{ inputs.with_lz4kd }}-kpm${{ inputs.inject_kpm }}
+          path: |
+            out/boot-fuxi-*.img
+            out/fuxi-ak3-*.zip
+            out/fuxi-zram-lz4kd-*.zip
+            out/Image
+            out/Image.kpm
+            out/bootimg_info.txt
+            out/BUILD_INFO.txt
+            out/SHA256SUMS
+            out/build.log
+            out/.config
+            out/System.map
+            out/Module.symvers
+            build-run.log
+            verify.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Job Summary
+        if: always()
+        run: |
+          {
+            echo "## fuxi 5.15.178 构建结果"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 基线 | ACK android13-5.15-2025-03 / 5.15.178 |"
+            echo "| SUSFS | ${{ inputs.with_susfs }} |"
+            echo "| LZ4KD | ${{ inputs.with_lz4kd }} |"
+            echo "| KPM 注入 | ${{ inputs.inject_kpm }} |"
+            echo "| KSU | \`${{ inputs.ksu_pkg }}\` / ${{ inputs.ksu_version }} |"
+            echo ""
+            echo '```'
+            cat out/BUILD_INFO.txt 2>/dev/null || echo "(无 BUILD_INFO)"
+            echo ""
+            cat out/SHA256SUMS 2>/dev/null || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
