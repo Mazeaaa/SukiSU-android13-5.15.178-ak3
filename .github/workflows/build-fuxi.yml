@@ -65,9 +65,15 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: 打印参数与 runner 资源
+        env:
+          PIN_COMMIT: ${{ inputs.kernel_commit }}
         run: |
           echo "with_susfs=${{ inputs.with_susfs }} with_lz4kd=${{ inputs.with_lz4kd }} inject_kpm=${{ inputs.inject_kpm }} pack_ak3=${{ inputs.pack_ak3 }}"
-          echo "ksu=${{ inputs.ksu_pkg }}/${{ inputs.ksu_version }} kernel_commit=${inputs.kernel_commit:-<tip>}"
+          if [ -n "$PIN_COMMIT" ]; then
+            echo "ksu=${{ inputs.ksu_pkg }}/${{ inputs.ksu_version }} kernel_commit=$PIN_COMMIT"
+          else
+            echo "ksu=${{ inputs.ksu_pkg }}/${{ inputs.ksu_version }} kernel_commit=tip(分支最新)"
+          fi
           nproc; free -h; df -h /
 
       - name: 释放磁盘（ACK 源码 + out 约需 35GB）
