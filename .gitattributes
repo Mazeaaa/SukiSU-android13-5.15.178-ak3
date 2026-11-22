@@ -1,0 +1,22 @@
+# 统一用 LF 提交，避免 Windows 上的 CRLF 让 CI 里的 shell 脚本报
+# "set: pipefail: invalid option name" / "bad interpreter"
+* text=auto eol=lf
+
+*.sh       text eol=lf
+*.bash     text eol=lf
+*.py       text eol=lf
+*.yml      text eol=lf
+*.yaml     text eol=lf
+*.md       text eol=lf
+*.config   text eol=lf
+*.prop     text eol=lf
+*.fragment text eol=lf
+*.env      text eol=lf
+*.xml      text eol=lf
+.gitignore text eol=lf
+
+# 二进制（万一以后放进来，别被改换行）
+*.img      binary
+*.zip      binary
+*.apk      binary
+*.gz       binary
